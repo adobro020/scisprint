@@ -105,9 +105,11 @@
     </header>`;
   }
   function bottomNav() {
+    const isHome = activeNav('/home') || (!location.hash || location.hash === '#');
+    const isMap = activeNav('/map') || activeNav('/course') || activeNav('/lesson');
     return `<nav class="bottom-nav">
-      <button class="nav-btn ${activeNav('/home') || (!location.hash || location.hash === '#') ? 'active' : ''}" data-route="#/home"><span class="ico">🏠</span>Home</button>
-      <button class="nav-btn ${activeNav('/course') ? 'active' : ''}" data-route="#/home"><span class="ico">🗺️</span>Map</button>
+      <button class="nav-btn ${isHome ? 'active' : ''}" data-route="#/home"><span class="ico">🏠</span>Home</button>
+      <button class="nav-btn ${isMap ? 'active' : ''}" data-route="#/map"><span class="ico">🗺️</span>Map</button>
       <button class="nav-btn ${activeNav('/profile') || activeNav('/review') ? 'active' : ''}" data-route="#/profile"><span class="ico">👤</span>Profile</button>
     </nav>`;
   }
@@ -131,6 +133,45 @@
         <button class="big-btn secondary" data-action="mixed">⚡ Mixed 8-question review</button>
       </section>${bottomNav()}`;
   }
+  function renderMap() {
+    const lessons = allLessons();
+    const doneCount = completedLessonIds().length;
+    const overallPct = lessons.length ? Math.round((doneCount / lessons.length) * 100) : 0;
+    const nextItem = lessons.find(({ course, lesson }) => {
+      const idx = course.lessons.findIndex(l => l.id === lesson.id);
+      return !isDone(lesson.id) && isUnlocked(course, idx);
+    });
+    app.innerHTML = `${header('🗺️ Science Map', '#/home')}
+      <section class="screen map-screen">
+        <div class="lesson-hero global-map-hero">
+          <div class="small">${doneCount}/${lessons.length} lessons complete</div>
+          <h1>Everything in one map</h1>
+          <p>Follow the full science path across Nature of Science, Earth Science, Physics, and Chemistry.</p>
+          <div class="progress-track" style="margin-top:14px"><div class="progress-fill" style="width:${overallPct}%"></div></div>
+        </div>
+        ${nextItem ? `<button class="big-btn map-continue" data-route="#/lesson/${nextItem.course.id}/${nextItem.lesson.id}">Continue: ${escapeHTML(nextItem.lesson.title)}</button>` : `<button class="big-btn secondary map-continue" data-action="mixed">All lessons complete — mixed review</button>`}
+        <div class="mega-map">${DATA.courses.map(course => {
+          const courseDone = course.lessons.filter(l => isDone(l.id)).length;
+          return `<section class="map-course">
+            <div class="map-course-head">
+              <span class="course-emoji map-course-icon">${course.emoji}</span>
+              <span><h2>${escapeHTML(course.title)}</h2><p>${courseDone}/${course.lessons.length} complete · ${escapeHTML(course.tagline)}</p></span>
+            </div>
+            <div class="progress-track"><div class="progress-fill" style="width:${coursePct(course)}%"></div></div>
+            <div class="map all-lessons-map">${course.lessons.map((lesson, idx) => {
+              const done = isDone(lesson.id); const unlocked = isUnlocked(course, idx);
+              const bubbleClass = done ? 'done' : unlocked ? 'active' : 'locked';
+              const icon = done ? '✓' : unlocked ? course.emoji : '🔒';
+              return `<button class="lesson-node" data-${unlocked ? 'route' : 'locked'}="${unlocked ? `#/lesson/${course.id}/${lesson.id}` : 'true'}">
+                <span class="bubble ${bubbleClass}">${icon}</span>
+                <span class="lesson-card ${unlocked ? '' : 'locked'}"><span><h3>${lesson.order}. ${escapeHTML(lesson.title)}</h3><p>${escapeHTML(course.title)} · ${lesson.questionCount} challenge${lesson.questionCount === 1 ? '' : 's'} · ${lesson.keyPoints.length} study cards</p></span><span class="chev">${unlocked ? '›' : ''}</span></span>
+              </button>`;
+            }).join("")}</div>
+          </section>`;
+        }).join("")}</div>
+      </section>${bottomNav()}`;
+  }
+
   function renderCourse(cid) {
     const course = getCourse(cid);
     if (!course) return renderHome();
@@ -266,6 +307,7 @@
   function route() {
     const hash = location.hash || '#/home';
     const parts = hash.replace(/^#\/?/, '').split('/');
+    if (parts[0] === 'map') return renderMap();
     if (parts[0] === 'course') return renderCourse(parts[1]);
     if (parts[0] === 'lesson') return renderLesson(parts[1], parts[2]);
     if (parts[0] === 'profile') return renderProfile();

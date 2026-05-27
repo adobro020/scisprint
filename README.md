@@ -23,3 +23,6 @@ Update: Sound effects are built in with the Web Audio API. Use the 🔊/🔇 but
 
 ## Combo pitch update
 Correct-answer sounds now climb higher in pitch for each consecutive correct answer within a quiz session. A wrong answer resets the combo, and the quiz screen shows the current in-a-row count once it reaches 2.
+
+## One-map update
+The Map navigation button now opens `#/map` and shows every lesson from every course in one combined science map. Course pages still exist, but the main map is now the complete lesson path.
