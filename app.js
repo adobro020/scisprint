@@ -1,0 +1,258 @@
+
+(() => {
+  const DATA = window.APP_DATA;
+  const STORE_KEY = "scisprint.progress.v1";
+  const DAILY_GOAL = 50;
+  const MAX_HEARTS = 5;
+  const app = document.getElementById("app");
+  let session = null;
+  let state = loadState();
+
+  function todayKey(date = new Date()) { return date.toISOString().slice(0, 10); }
+  function yesterdayKey() { const d = new Date(); d.setDate(d.getDate() - 1); return todayKey(d); }
+  function defaultState() {
+    return { xp: 0, hearts: MAX_HEARTS, streak: 0, lastStudyDate: null, daily: { date: todayKey(), xp: 0 }, completed: {}, mistakes: {}, totalCorrect: 0, totalAnswered: 0 };
+  }
+  function loadState() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null") || defaultState();
+      const t = todayKey();
+      if (!saved.daily || saved.daily.date !== t) saved.daily = { date: t, xp: 0 };
+      if (saved.lastHeartRefresh !== t) { saved.hearts = Math.max(saved.hearts || 0, MAX_HEARTS); saved.lastHeartRefresh = t; }
+      return { ...defaultState(), ...saved };
+    } catch { return defaultState(); }
+  }
+  function saveState() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  function studyPulse(xp) {
+    const t = todayKey();
+    if (state.lastStudyDate !== t) {
+      state.streak = state.lastStudyDate === yesterdayKey() ? (state.streak || 0) + 1 : 1;
+      state.lastStudyDate = t;
+    }
+    state.xp += xp;
+    state.daily = state.daily && state.daily.date === t ? state.daily : { date: t, xp: 0 };
+    state.daily.xp += xp;
+    saveState();
+  }
+  function escapeHTML(value = "") {
+    return String(value).replace(/[&<>'"]/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" }[ch]));
+  }
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+  function allLessons() { return DATA.courses.flatMap(c => c.lessons.map(l => ({ course: c, lesson: l }))); }
+  function allQuestions() { return allLessons().flatMap(({ course, lesson }) => lesson.questions.map(q => ({ ...q, courseTitle: course.title, lessonTitle: lesson.title }))); }
+  function getCourse(cid) { return DATA.courses.find(c => c.id === cid); }
+  function getLesson(cid, lid) { return getCourse(cid)?.lessons.find(l => l.id === lid); }
+  function completedLessonIds() { return Object.keys(state.completed || {}); }
+  function isDone(lid) { return Boolean(state.completed && state.completed[lid]); }
+  function isUnlocked(course, idx) { return idx === 0 || isDone(course.lessons[idx - 1].id); }
+  function coursePct(course) { return Math.round((course.lessons.filter(l => isDone(l.id)).length / course.lessons.length) * 100); }
+  function activeNav(name) { return location.hash.includes(name) ? "active" : ""; }
+  function header(title = DATA.appName, backTarget = null) {
+    return `<header class="topbar">
+      <div class="brand">${backTarget ? `<button class="back" data-route="${backTarget}" aria-label="Go back">‹</button>` : `<span class="logo">⚗️</span>`}<span>${escapeHTML(title)}</span></div>
+      <div class="stats"><span class="pill">🔥 ${state.streak || 0}</span><span class="pill">❤️ ${state.hearts ?? MAX_HEARTS}</span><span class="pill">⭐ ${state.xp || 0}</span></div>
+    </header>`;
+  }
+  function bottomNav() {
+    return `<nav class="bottom-nav">
+      <button class="nav-btn ${activeNav('/home') || (!location.hash || location.hash === '#') ? 'active' : ''}" data-route="#/home"><span class="ico">🏠</span>Home</button>
+      <button class="nav-btn ${activeNav('/course') ? 'active' : ''}" data-route="#/home"><span class="ico">🗺️</span>Map</button>
+      <button class="nav-btn ${activeNav('/profile') || activeNav('/review') ? 'active' : ''}" data-route="#/profile"><span class="ico">👤</span>Profile</button>
+    </nav>`;
+  }
+  function renderHome() {
+    const lessons = allLessons();
+    const totalDone = completedLessonIds().length;
+    const dailyPct = Math.min(100, Math.round(((state.daily?.xp || 0) / DAILY_GOAL) * 100));
+    app.innerHTML = `${header()}
+      <section class="screen">
+        <div class="hero"><div class="mascot">🧠</div><h1>Learn science in tiny wins.</h1><p>${escapeHTML(DATA.subtitle)} built from your uploaded study guide.</p></div>
+        <div class="section-title row"><span>Today’s goal</span><span class="small">${state.daily?.xp || 0}/${DAILY_GOAL} XP</span></div>
+        <div class="card"><div class="progress-track"><div class="progress-fill" style="width:${dailyPct}%"></div></div><p class="small" style="margin:10px 0 0">Complete one lesson or mixed review to keep your streak alive.</p></div>
+        <div class="section-title row"><span>Courses</span><span class="small">${totalDone}/${lessons.length} lessons</span></div>
+        <div class="course-grid">${DATA.courses.map(c => `
+          <button class="course-card" data-route="#/course/${c.id}">
+            <span class="course-emoji">${c.emoji}</span>
+            <span><h3>${escapeHTML(c.title)}</h3><p>${escapeHTML(c.tagline)}</p><div class="progress-track"><div class="progress-fill" style="width:${coursePct(c)}%"></div></div></span>
+            <span class="chev">›</span>
+          </button>`).join("")}</div>
+        <div class="section-title">Quick practice</div>
+        <button class="big-btn secondary" data-action="mixed">⚡ Mixed 8-question review</button>
+      </section>${bottomNav()}`;
+  }
+  function renderCourse(cid) {
+    const course = getCourse(cid);
+    if (!course) return renderHome();
+    const done = course.lessons.filter(l => isDone(l.id)).length;
+    app.innerHTML = `${header(course.emoji + ' ' + course.title, '#/home')}
+      <section class="screen">
+        <div class="lesson-hero"><div class="small">${done}/${course.lessons.length} lessons complete</div><h1>${escapeHTML(course.title)}</h1><p>${escapeHTML(course.tagline)}</p><div class="progress-track" style="margin-top:14px"><div class="progress-fill" style="width:${coursePct(course)}%"></div></div></div>
+        <div class="section-title">Lesson path</div>
+        <div class="map">${course.lessons.map((lesson, idx) => {
+          const done = isDone(lesson.id); const unlocked = isUnlocked(course, idx);
+          const bubbleClass = done ? 'done' : unlocked ? 'active' : 'locked';
+          const icon = done ? '✓' : unlocked ? course.emoji : '🔒';
+          return `<button class="lesson-node" data-${unlocked ? 'route' : 'locked'}="${unlocked ? `#/lesson/${course.id}/${lesson.id}` : 'true'}">
+            <span class="bubble ${bubbleClass}">${icon}</span>
+            <span class="lesson-card ${unlocked ? '' : 'locked'}"><span><h3>${lesson.order}. ${escapeHTML(lesson.title)}</h3><p>${lesson.questionCount} challenge${lesson.questionCount === 1 ? '' : 's'} · ${lesson.keyPoints.length} study cards</p></span><span class="chev">${unlocked ? '›' : ''}</span></span>
+          </button>`;
+        }).join("")}</div>
+      </section>${bottomNav()}`;
+  }
+  function renderLesson(cid, lid) {
+    const course = getCourse(cid); const lesson = getLesson(cid, lid);
+    if (!course || !lesson) return renderHome();
+    const points = lesson.keyPoints.length ? lesson.keyPoints : ['Review this lesson, then answer the challenge questions.'];
+    app.innerHTML = `${header('Lesson', `#/course/${cid}`)}
+      <section class="screen">
+        <div class="lesson-hero"><div class="small">${course.emoji} ${escapeHTML(course.title)} · Lesson ${lesson.order}</div><h1>${escapeHTML(lesson.title)}</h1><p>${lesson.questionCount} challenge questions. Earn XP by answering them correctly.</p></div>
+        <div class="section-title">Bite-sized study cards</div>
+        <div class="notes">${points.map((p, i) => `<div class="note"><span class="note-num">${i + 1}</span><span>${escapeHTML(p)}</span></div>`).join("")}</div>
+        <button class="big-btn" data-action="start-lesson" data-course="${cid}" data-lesson="${lid}">${isDone(lid) ? 'Practice again' : 'Start challenge'}</button>
+      </section>${bottomNav()}`;
+  }
+  function buildLessonSession(cid, lid) {
+    const course = getCourse(cid); const lesson = getLesson(cid, lid);
+    session = { mode: 'lesson', cid, lid, title: lesson.title, subtitle: course.title, questions: shuffle(lesson.questions).map(q => ({ ...q, options: shuffle(q.options) })), index: 0, correct: 0, wrong: 0, xp: 0, selected: null, locked: false };
+    renderQuiz();
+  }
+  function buildMixedSession() {
+    const qs = shuffle(allQuestions()).slice(0, 8);
+    session = { mode: 'mixed', title: 'Mixed Review', subtitle: 'All science courses', questions: qs.map(q => ({ ...q, options: shuffle(q.options) })), index: 0, correct: 0, wrong: 0, xp: 0, selected: null, locked: false };
+    renderQuiz();
+  }
+  function buildReviewSession() {
+    const mistakeIds = Object.keys(state.mistakes || {});
+    const byId = Object.fromEntries(allQuestions().map(q => [q.id, q]));
+    const qs = mistakeIds.map(id => byId[id]).filter(Boolean);
+    if (!qs.length) return toast('No mistakes to review yet. Try a lesson first!');
+    session = { mode: 'review', title: 'Mistake Review', subtitle: 'Practice missed questions', questions: shuffle(qs).slice(0, 12).map(q => ({ ...q, options: shuffle(q.options) })), index: 0, correct: 0, wrong: 0, xp: 0, selected: null, locked: false };
+    renderQuiz();
+  }
+  function renderQuiz() {
+    if (!session) return renderHome();
+    if (session.index >= session.questions.length) return renderComplete();
+    const q = session.questions[session.index];
+    const pct = Math.round((session.index / session.questions.length) * 100);
+    app.innerHTML = `<div class="quiz-top"><button class="close" data-action="quit-quiz">×</button><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><span class="pill">❤️ ${state.hearts ?? MAX_HEARTS}</span></div>
+      <section class="screen">
+        <div class="question-card">
+          <div class="question-kicker">${session.mode === 'lesson' ? 'Lesson challenge' : session.title} · ${session.index + 1}/${session.questions.length}</div>
+          <h1 class="question">${escapeHTML(q.question)}</h1>
+          <div class="options">${q.options.map(opt => {
+            let cls = '';
+            if (session.selected) cls = opt.letter === q.answer ? 'correct' : (opt.letter === session.selected ? 'wrong' : '');
+            return `<button class="option ${cls}" ${session.selected ? 'disabled' : ''} data-action="answer" data-letter="${opt.letter}"><span class="option-letter">${opt.letter}</span><span>${escapeHTML(opt.text)}</span></button>`;
+          }).join("")}</div>
+        </div>
+        <p class="small" style="text-align:center;margin-top:14px">${escapeHTML(session.subtitle || '')}</p>
+      </section>${session.selected ? feedbackHTML() : ''}`;
+  }
+  function feedbackHTML() {
+    const q = session.questions[session.index];
+    const good = session.selected === q.answer;
+    const explanation = q.explanation || `Correct answer: ${q.answer}. ${q.answerText || ''}`;
+    return `<div class="feedback ${good ? 'good' : 'bad'}"><h3>${good ? 'Nice!' : 'Not quite'}</h3><p>${escapeHTML(explanation)}</p><button class="big-btn ${good ? '' : 'danger'}" data-action="next-question">Continue</button></div>`;
+  }
+  function answer(letter) {
+    if (!session || session.selected) return;
+    const q = session.questions[session.index];
+    session.selected = letter;
+    const correct = letter === q.answer;
+    state.totalAnswered += 1;
+    if (correct) {
+      session.correct += 1;
+      session.xp += 10;
+      state.totalCorrect += 1;
+      delete state.mistakes[q.id];
+      studyPulse(10);
+    } else {
+      session.wrong += 1;
+      state.hearts = Math.max(0, (state.hearts ?? MAX_HEARTS) - 1);
+      state.mistakes[q.id] = { at: new Date().toISOString(), question: q.question, answer: q.answerText };
+      saveState();
+    }
+    renderQuiz();
+  }
+  function nextQuestion() { session.selected = null; session.index += 1; renderQuiz(); }
+  function renderComplete() {
+    const pass = session.correct >= Math.ceil(session.questions.length * 0.6);
+    let bonus = 0;
+    if (session.mode === 'lesson' && pass && !isDone(session.lid)) { state.completed[session.lid] = new Date().toISOString(); bonus = 20; studyPulse(bonus); }
+    saveState();
+    confetti();
+    const back = session.mode === 'lesson' ? `#/course/${session.cid}` : '#/home';
+    app.innerHTML = `${header('Complete', back)}
+      <section class="screen complete"><div style="width:100%"><div class="trophy">${pass ? '🏆' : '💪'}</div><h1>${pass ? 'Lesson complete!' : 'Keep practicing!'}</h1><p class="small">${escapeHTML(session.title)}</p>
+      <div class="stat-grid"><div class="stat-card"><b>${session.correct}</b><span class="small">Correct</span></div><div class="stat-card"><b>${session.wrong}</b><span class="small">Missed</span></div><div class="stat-card"><b>${session.xp + bonus}</b><span class="small">XP</span></div></div>
+      ${bonus ? '<div class="badge-row"><span class="badge">🎉 First clear +20 XP</span></div>' : ''}
+      <button class="big-btn" data-route="${back}">Continue</button></div></section>${bottomNav()}`;
+  }
+  function renderProfile() {
+    const total = state.totalAnswered || 0;
+    const acc = total ? Math.round(((state.totalCorrect || 0) / total) * 100) : 0;
+    const done = completedLessonIds().length;
+    const mistakeCount = Object.keys(state.mistakes || {}).length;
+    app.innerHTML = `${header('Profile', '#/home')}
+      <section class="screen">
+        <div class="card profile-head"><div class="avatar">🧪</div><div><h2 style="margin:0;letter-spacing:-.04em">Science sprinter</h2><p class="small" style="margin:5px 0 0">Keep earning XP to finish every course.</p></div></div>
+        <div class="section-title">Stats</div>
+        <div class="stat-grid"><div class="stat-card"><b>${state.xp || 0}</b><span class="small">XP</span></div><div class="stat-card"><b>${state.streak || 0}</b><span class="small">Streak</span></div><div class="stat-card"><b>${acc}%</b><span class="small">Accuracy</span></div></div>
+        <div class="card"><div class="row"><b>Course progress</b><span class="small">${done}/${allLessons().length}</span></div><div class="progress-track" style="margin-top:10px"><div class="progress-fill" style="width:${Math.round(done / allLessons().length * 100)}%"></div></div></div>
+        <div class="section-title">Practice</div>
+        <button class="big-btn secondary" data-action="review">🧠 Review mistakes (${mistakeCount})</button>
+        <button class="big-btn secondary" style="margin-top:10px" data-action="mixed">⚡ Mixed review</button>
+        <button class="big-btn danger" style="margin-top:10px" data-action="reset">Reset progress</button>
+      </section>${bottomNav()}`;
+  }
+  function route() {
+    const hash = location.hash || '#/home';
+    const parts = hash.replace(/^#\/?/, '').split('/');
+    if (parts[0] === 'course') return renderCourse(parts[1]);
+    if (parts[0] === 'lesson') return renderLesson(parts[1], parts[2]);
+    if (parts[0] === 'profile') return renderProfile();
+    return renderHome();
+  }
+  function toast(msg) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2300);
+  }
+  function confetti() {
+    const wrap = document.createElement('div');
+    wrap.className = 'confetti';
+    for (let i = 0; i < 42; i++) {
+      const piece = document.createElement('i');
+      piece.style.left = Math.random() * 100 + '%';
+      piece.style.animationDelay = Math.random() * .55 + 's';
+      piece.style.transform = `rotate(${Math.random()*160}deg)`;
+      wrap.appendChild(piece);
+    }
+    document.body.appendChild(wrap);
+    setTimeout(() => wrap.remove(), 2000);
+  }
+  app.addEventListener('click', (e) => {
+    const routeBtn = e.target.closest('[data-route]');
+    const locked = e.target.closest('[data-locked]');
+    const action = e.target.closest('[data-action]');
+    if (routeBtn) { location.hash = routeBtn.dataset.route; return; }
+    if (locked) { toast('Finish the previous lesson to unlock this one.'); return; }
+    if (!action) return;
+    const a = action.dataset.action;
+    if (a === 'start-lesson') buildLessonSession(action.dataset.course, action.dataset.lesson);
+    if (a === 'answer') answer(action.dataset.letter);
+    if (a === 'next-question') nextQuestion();
+    if (a === 'quit-quiz') { const back = session?.mode === 'lesson' ? `#/lesson/${session.cid}/${session.lid}` : '#/home'; session = null; location.hash = back; }
+    if (a === 'mixed') buildMixedSession();
+    if (a === 'review') buildReviewSession();
+    if (a === 'reset') { if (confirm('Reset all progress and XP?')) { state = defaultState(); saveState(); route(); } }
+  });
+  window.addEventListener('hashchange', () => { session = null; route(); });
+  route();
+})();
