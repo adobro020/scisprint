@@ -11,7 +11,7 @@
   function todayKey(date = new Date()) { return date.toISOString().slice(0, 10); }
   function yesterdayKey() { const d = new Date(); d.setDate(d.getDate() - 1); return todayKey(d); }
   function defaultState() {
-    return { xp: 0, hearts: MAX_HEARTS, streak: 0, lastStudyDate: null, daily: { date: todayKey(), xp: 0 }, completed: {}, mistakes: {}, totalCorrect: 0, totalAnswered: 0 };
+    return { xp: 0, hearts: MAX_HEARTS, streak: 0, lastStudyDate: null, daily: { date: todayKey(), xp: 0 }, completed: {}, mistakes: {}, totalCorrect: 0, totalAnswered: 0, soundOn: true };
   }
   function loadState() {
     try {
@@ -42,6 +42,50 @@
     for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
     return a;
   }
+  let audioCtx = null;
+  function getAudioContext() {
+    if (!state.soundOn) return null;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    try {
+      audioCtx = audioCtx || new AudioContext();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      return audioCtx;
+    } catch {
+      return null;
+    }
+  }
+  function tone(ctx, freq, start, duration, type = "sine", volume = 0.06) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(volume, start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + duration + 0.02);
+  }
+  function playSound(name) {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const patterns = {
+      tap: [[392, 0, .05, "triangle", .025]],
+      correct: [[523.25, 0, .09, "triangle", .06], [659.25, .08, .10, "triangle", .06], [783.99, .17, .12, "triangle", .055]],
+      wrong: [[220, 0, .12, "sawtooth", .035], [164.81, .12, .16, "sawtooth", .03]],
+      locked: [[146.83, 0, .11, "square", .025], [130.81, .12, .14, "square", .022]],
+      complete: [[523.25, 0, .10, "triangle", .06], [659.25, .10, .10, "triangle", .06], [783.99, .20, .12, "triangle", .06], [1046.5, .34, .28, "sine", .055]]
+    };
+    (patterns[name] || patterns.tap).forEach(([freq, offset, dur, type, vol]) => tone(ctx, freq, now + offset, dur, type, vol));
+  }
+  function toggleSound() {
+    state.soundOn = !state.soundOn;
+    saveState();
+    if (state.soundOn) playSound('correct');
+    route();
+  }
   function allLessons() { return DATA.courses.flatMap(c => c.lessons.map(l => ({ course: c, lesson: l }))); }
   function allQuestions() { return allLessons().flatMap(({ course, lesson }) => lesson.questions.map(q => ({ ...q, courseTitle: course.title, lessonTitle: lesson.title }))); }
   function getCourse(cid) { return DATA.courses.find(c => c.id === cid); }
@@ -54,7 +98,7 @@
   function header(title = DATA.appName, backTarget = null) {
     return `<header class="topbar">
       <div class="brand">${backTarget ? `<button class="back" data-route="${backTarget}" aria-label="Go back">‹</button>` : `<span class="logo">⚗️</span>`}<span>${escapeHTML(title)}</span></div>
-      <div class="stats"><span class="pill">🔥 ${state.streak || 0}</span><span class="pill">❤️ ${state.hearts ?? MAX_HEARTS}</span><span class="pill">⭐ ${state.xp || 0}</span></div>
+      <div class="stats"><span class="pill">🔥 ${state.streak || 0}</span><span class="pill">❤️ ${state.hearts ?? MAX_HEARTS}</span><span class="pill">⭐ ${state.xp || 0}</span><button class="pill sound-toggle" data-action="toggle-sound" aria-label="${state.soundOn ? 'Mute sounds' : 'Unmute sounds'}">${state.soundOn ? '🔊' : '🔇'}</button></div>
     </header>`;
   }
   function bottomNav() {
@@ -138,7 +182,7 @@
     if (session.index >= session.questions.length) return renderComplete();
     const q = session.questions[session.index];
     const pct = Math.round((session.index / session.questions.length) * 100);
-    app.innerHTML = `<div class="quiz-top"><button class="close" data-action="quit-quiz">×</button><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><span class="pill">❤️ ${state.hearts ?? MAX_HEARTS}</span></div>
+    app.innerHTML = `<div class="quiz-top"><button class="close" data-action="quit-quiz">×</button><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><div class="quiz-controls"><span class="pill">❤️ ${state.hearts ?? MAX_HEARTS}</span><button class="pill sound-toggle" data-action="toggle-sound" aria-label="${state.soundOn ? 'Mute sounds' : 'Unmute sounds'}">${state.soundOn ? '🔊' : '🔇'}</button></div></div>
       <section class="screen">
         <div class="question-card">
           <div class="question-kicker">${session.mode === 'lesson' ? 'Lesson challenge' : session.title} · ${session.index + 1}/${session.questions.length}</div>
@@ -165,12 +209,14 @@
     const correct = letter === q.answer;
     state.totalAnswered += 1;
     if (correct) {
+      playSound('correct');
       session.correct += 1;
       session.xp += 10;
       state.totalCorrect += 1;
       delete state.mistakes[q.id];
       studyPulse(10);
     } else {
+      playSound('wrong');
       session.wrong += 1;
       state.hearts = Math.max(0, (state.hearts ?? MAX_HEARTS) - 1);
       state.mistakes[q.id] = { at: new Date().toISOString(), question: q.question, answer: q.answerText };
@@ -184,6 +230,7 @@
     let bonus = 0;
     if (session.mode === 'lesson' && pass && !isDone(session.lid)) { state.completed[session.lid] = new Date().toISOString(); bonus = 20; studyPulse(bonus); }
     saveState();
+    playSound('complete');
     confetti();
     const back = session.mode === 'lesson' ? `#/course/${session.cid}` : '#/home';
     app.innerHTML = `${header('Complete', back)}
@@ -241,10 +288,12 @@
     const routeBtn = e.target.closest('[data-route]');
     const locked = e.target.closest('[data-locked]');
     const action = e.target.closest('[data-action]');
-    if (routeBtn) { location.hash = routeBtn.dataset.route; return; }
-    if (locked) { toast('Finish the previous lesson to unlock this one.'); return; }
+    if (routeBtn) { playSound('tap'); location.hash = routeBtn.dataset.route; return; }
+    if (locked) { playSound('locked'); toast('Finish the previous lesson to unlock this one.'); return; }
     if (!action) return;
     const a = action.dataset.action;
+    if (a === 'toggle-sound') { toggleSound(); return; }
+    if (!['answer', 'next-question'].includes(a)) playSound('tap');
     if (a === 'start-lesson') buildLessonSession(action.dataset.course, action.dataset.lesson);
     if (a === 'answer') answer(action.dataset.letter);
     if (a === 'next-question') nextQuestion();

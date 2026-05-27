@@ -1,22 +1,22 @@
-# SciSprint Mobile Web App
+# SciSprint — Responsive Science Review Web App
 
-A mobile-first, Duolingo-style science review web app generated from `note(1).txt`.
+A Duolingo-style science review app built from the provided study guide.
 
-## What is included
+## What's included
+- Mobile-first lesson path UI
+- Desktop dashboard layout that activates at wider screen sizes
+- Course progress, XP, hearts, streaks, mixed review, and mistake review
+- Standalone local storage progress tracking
 
-- 4 courses: Nature of Science, Earth Science, Physics, Chemistry
-- 41 lessons
-- 87 quiz questions/challenges
-- XP, hearts, streaks, course progress, lesson locks, and mistake review
-- Runs fully offline: no build step, no external libraries
+## How to run
+Open `index.html` in a modern browser. No server or installation is required.
 
-## How to use
+## Desktop behavior
+At tablet/desktop widths, the app changes from a phone shell into a wider dashboard:
+- Side navigation replaces the bottom tab bar
+- Courses and lessons use multi-column cards
+- Study cards and quiz answers expand into desktop grids
+- Feedback appears as a desktop panel instead of a mobile bottom sheet
 
-Open `index.html` in a browser. For a phone-like experience, open it on mobile or use your browser's mobile device preview.
 
-## Files
-
-- `index.html` — app shell
-- `styles.css` — mobile UI styling
-- `data.js` — course and quiz data extracted from the study guide
-- `app.js` — app logic and progress saving via localStorage
+Update: Sound effects are built in with the Web Audio API. Use the 🔊/🔇 button in the top stats bar to mute or unmute. Sounds include tap, correct, incorrect, locked lesson, and lesson-complete effects.
