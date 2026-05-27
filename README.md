@@ -20,3 +20,6 @@ At tablet/desktop widths, the app changes from a phone shell into a wider dashbo
 
 
 Update: Sound effects are built in with the Web Audio API. Use the 🔊/🔇 button in the top stats bar to mute or unmute. Sounds include tap, correct, incorrect, locked lesson, and lesson-complete effects.
+
+## Combo pitch update
+Correct-answer sounds now climb higher in pitch for each consecutive correct answer within a quiz session. A wrong answer resets the combo, and the quiz screen shows the current in-a-row count once it reaches 2.

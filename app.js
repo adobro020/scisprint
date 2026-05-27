@@ -67,10 +67,13 @@
     osc.start(start);
     osc.stop(start + duration + 0.02);
   }
-  function playSound(name) {
+  function playSound(name, combo = 1) {
     const ctx = getAudioContext();
     if (!ctx) return;
     const now = ctx.currentTime;
+    const comboSteps = name === 'correct' ? Math.min(Math.max(combo - 1, 0), 8) : 0;
+    const pitchLift = Math.pow(2, comboSteps / 12);
+    const volumeLift = name === 'correct' ? Math.min(0.015, comboSteps * 0.0025) : 0;
     const patterns = {
       tap: [[392, 0, .05, "triangle", .025]],
       correct: [[523.25, 0, .09, "triangle", .06], [659.25, .08, .10, "triangle", .06], [783.99, .17, .12, "triangle", .055]],
@@ -78,7 +81,7 @@
       locked: [[146.83, 0, .11, "square", .025], [130.81, .12, .14, "square", .022]],
       complete: [[523.25, 0, .10, "triangle", .06], [659.25, .10, .10, "triangle", .06], [783.99, .20, .12, "triangle", .06], [1046.5, .34, .28, "sine", .055]]
     };
-    (patterns[name] || patterns.tap).forEach(([freq, offset, dur, type, vol]) => tone(ctx, freq, now + offset, dur, type, vol));
+    (patterns[name] || patterns.tap).forEach(([freq, offset, dur, type, vol]) => tone(ctx, freq * pitchLift, now + offset, dur, type, vol + volumeLift));
   }
   function toggleSound() {
     state.soundOn = !state.soundOn;
@@ -161,12 +164,12 @@
   }
   function buildLessonSession(cid, lid) {
     const course = getCourse(cid); const lesson = getLesson(cid, lid);
-    session = { mode: 'lesson', cid, lid, title: lesson.title, subtitle: course.title, questions: shuffle(lesson.questions).map(q => ({ ...q, options: shuffle(q.options) })), index: 0, correct: 0, wrong: 0, xp: 0, selected: null, locked: false };
+    session = { mode: 'lesson', cid, lid, title: lesson.title, subtitle: course.title, questions: shuffle(lesson.questions).map(q => ({ ...q, options: shuffle(q.options) })), index: 0, correct: 0, wrong: 0, xp: 0, selected: null, locked: false, combo: 0, maxCombo: 0 };
     renderQuiz();
   }
   function buildMixedSession() {
     const qs = shuffle(allQuestions()).slice(0, 8);
-    session = { mode: 'mixed', title: 'Mixed Review', subtitle: 'All science courses', questions: qs.map(q => ({ ...q, options: shuffle(q.options) })), index: 0, correct: 0, wrong: 0, xp: 0, selected: null, locked: false };
+    session = { mode: 'mixed', title: 'Mixed Review', subtitle: 'All science courses', questions: qs.map(q => ({ ...q, options: shuffle(q.options) })), index: 0, correct: 0, wrong: 0, xp: 0, selected: null, locked: false, combo: 0, maxCombo: 0 };
     renderQuiz();
   }
   function buildReviewSession() {
@@ -174,7 +177,7 @@
     const byId = Object.fromEntries(allQuestions().map(q => [q.id, q]));
     const qs = mistakeIds.map(id => byId[id]).filter(Boolean);
     if (!qs.length) return toast('No mistakes to review yet. Try a lesson first!');
-    session = { mode: 'review', title: 'Mistake Review', subtitle: 'Practice missed questions', questions: shuffle(qs).slice(0, 12).map(q => ({ ...q, options: shuffle(q.options) })), index: 0, correct: 0, wrong: 0, xp: 0, selected: null, locked: false };
+    session = { mode: 'review', title: 'Mistake Review', subtitle: 'Practice missed questions', questions: shuffle(qs).slice(0, 12).map(q => ({ ...q, options: shuffle(q.options) })), index: 0, correct: 0, wrong: 0, xp: 0, selected: null, locked: false, combo: 0, maxCombo: 0 };
     renderQuiz();
   }
   function renderQuiz() {
@@ -182,7 +185,7 @@
     if (session.index >= session.questions.length) return renderComplete();
     const q = session.questions[session.index];
     const pct = Math.round((session.index / session.questions.length) * 100);
-    app.innerHTML = `<div class="quiz-top"><button class="close" data-action="quit-quiz">×</button><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><div class="quiz-controls"><span class="pill">❤️ ${state.hearts ?? MAX_HEARTS}</span><button class="pill sound-toggle" data-action="toggle-sound" aria-label="${state.soundOn ? 'Mute sounds' : 'Unmute sounds'}">${state.soundOn ? '🔊' : '🔇'}</button></div></div>
+    app.innerHTML = `<div class="quiz-top"><button class="close" data-action="quit-quiz">×</button><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><div class="quiz-controls"><span class="pill">❤️ ${state.hearts ?? MAX_HEARTS}</span>${(session.combo || 0) > 1 ? `<span class="pill">🎵 ${session.combo} in a row</span>` : ''}<button class="pill sound-toggle" data-action="toggle-sound" aria-label="${state.soundOn ? 'Mute sounds' : 'Unmute sounds'}">${state.soundOn ? '🔊' : '🔇'}</button></div></div>
       <section class="screen">
         <div class="question-card">
           <div class="question-kicker">${session.mode === 'lesson' ? 'Lesson challenge' : session.title} · ${session.index + 1}/${session.questions.length}</div>
@@ -200,7 +203,8 @@
     const q = session.questions[session.index];
     const good = session.selected === q.answer;
     const explanation = q.explanation || `Correct answer: ${q.answer}. ${q.answerText || ''}`;
-    return `<div class="feedback ${good ? 'good' : 'bad'}"><h3>${good ? 'Nice!' : 'Not quite'}</h3><p>${escapeHTML(explanation)}</p><button class="big-btn ${good ? '' : 'danger'}" data-action="next-question">Continue</button></div>`;
+    const comboNote = good && (session.combo || 0) > 1 ? `<p class="small">${session.combo} correct in a row — the next correct sound will climb higher.</p>` : '';
+    return `<div class="feedback ${good ? 'good' : 'bad'}"><h3>${good ? 'Nice!' : 'Not quite'}</h3><p>${escapeHTML(explanation)}</p>${comboNote}<button class="big-btn ${good ? '' : 'danger'}" data-action="next-question">Continue</button></div>`;
   }
   function answer(letter) {
     if (!session || session.selected) return;
@@ -209,13 +213,16 @@
     const correct = letter === q.answer;
     state.totalAnswered += 1;
     if (correct) {
-      playSound('correct');
+      session.combo = (session.combo || 0) + 1;
+      session.maxCombo = Math.max(session.maxCombo || 0, session.combo);
+      playSound('correct', session.combo);
       session.correct += 1;
       session.xp += 10;
       state.totalCorrect += 1;
       delete state.mistakes[q.id];
       studyPulse(10);
     } else {
+      session.combo = 0;
       playSound('wrong');
       session.wrong += 1;
       state.hearts = Math.max(0, (state.hearts ?? MAX_HEARTS) - 1);
@@ -235,7 +242,7 @@
     const back = session.mode === 'lesson' ? `#/course/${session.cid}` : '#/home';
     app.innerHTML = `${header('Complete', back)}
       <section class="screen complete"><div style="width:100%"><div class="trophy">${pass ? '🏆' : '💪'}</div><h1>${pass ? 'Lesson complete!' : 'Keep practicing!'}</h1><p class="small">${escapeHTML(session.title)}</p>
-      <div class="stat-grid"><div class="stat-card"><b>${session.correct}</b><span class="small">Correct</span></div><div class="stat-card"><b>${session.wrong}</b><span class="small">Missed</span></div><div class="stat-card"><b>${session.xp + bonus}</b><span class="small">XP</span></div></div>
+      <div class="stat-grid"><div class="stat-card"><b>${session.correct}</b><span class="small">Correct</span></div><div class="stat-card"><b>${session.wrong}</b><span class="small">Missed</span></div><div class="stat-card"><b>${session.xp + bonus}</b><span class="small">XP</span></div><div class="stat-card"><b>${session.maxCombo || 0}</b><span class="small">Best combo</span></div></div>
       ${bonus ? '<div class="badge-row"><span class="badge">🎉 First clear +20 XP</span></div>' : ''}
       <button class="big-btn" data-route="${back}">Continue</button></div></section>${bottomNav()}`;
   }
