@@ -174,27 +174,107 @@
   function isUnlocked(course, idx) { return true; }
   function coursePct(course) { return Math.round((course.lessons.filter(l => isDone(l.id)).length / course.lessons.length) * 100); }
   function activeNav(name) { return location.hash.includes(name) ? "active" : ""; }
+  function cleanFlashText(value) {
+    return String(value || '')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/\s+/g, ' ')
+      .replace(/^[-*•]\s*/, '')
+      .trim()
+      .replace(/\s+([?.!,;:])/g, '$1');
+  }
+  function stripFinalPeriod(value) {
+    return cleanFlashText(value).replace(/\.$/, '');
+  }
+  function titleCaseTerm(value) {
+    const small = new Set(['and','or','of','the','a','an','to','in','on','for','with','from']);
+    return stripFinalPeriod(value).split(/\s+/).map((w, i) => {
+      if (i > 0 && small.has(w.toLowerCase())) return w.toLowerCase();
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    }).join(' ');
+  }
+  function isFlashHeading(text) {
+    const t = cleanFlashText(text);
+    if (!t) return true;
+    if (/^(big review|quick memory tricks|easy memory|easy trick|easy example|important facts|important ideas|important rule|important warning|key idea|key rules|memory trick|common uses|energy levels|mass and gravity|distance and gravity|adding energy|removing energy|sound|light|minerals|rocks)$/i.test(t)) return true;
+    if (/^(term|type|object|layer|process|rock type|gas|front|particle|bond type|state|phase change|variable type|change)\s+—/i.test(t)) return true;
+    if (t.length < 44 && !/[.!?=→—:]/.test(t) && /^[A-Z0-9]/.test(t)) return true;
+    return false;
+  }
+  function makeCard(front, back, tag = 'Study') {
+    front = stripFinalPeriod(front);
+    back = cleanFlashText(back);
+    if (!front || !back || front.toLowerCase() === back.toLowerCase()) return null;
+    return { front, back, tag };
+  }
   function flashPromptFor(point, idx, lessonTitle) {
-    const text = String(point || '').replace(/\s+/g, ' ').trim();
-    const dashParts = text.split(/\s+—\s+/).filter(Boolean);
-    if (dashParts.length >= 2) return { front: dashParts[0], back: dashParts.slice(1).join(' — ') };
-    const colon = text.match(/^([^:]{3,80}):\s*(.+)$/);
-    if (colon) return { front: colon[1], back: colon[2] };
-    const equals = text.match(/^([^=]{2,80})\s*=\s*(.+)$/);
-    if (equals) return { front: equals[1].trim(), back: equals[2].trim() };
-    const isDef = text.match(/^(?:A|An|The)?\s*([^.!?]{2,70}?)\s+(?:is|are|means)\s+(.+)$/i);
-    if (isDef) {
-      const term = isDef[1].trim().replace(/^a\s+|^an\s+|^the\s+/i, '');
-      return { front: `What ${/s$/i.test(term) ? 'are' : 'is'} ${term}?`, back: isDef[2].trim() };
+    const text = cleanFlashText(point);
+    if (isFlashHeading(text)) return null;
+
+    const dashParts = text.split(/\s+—\s+/).map(cleanFlashText).filter(Boolean);
+    if (dashParts.length >= 2) {
+      const term = dashParts[0];
+      if (/^(term|type|object|layer|process|rock type|gas|front|particle|bond type|state|phase change|variable type|change)$/i.test(term)) return null;
+      const meaning = dashParts[1];
+      const extra = dashParts.slice(2).join(' — ');
+      return makeCard(term, extra ? `${meaning}\n\nExample: ${extra}` : meaning, 'Term');
     }
-    const arrow = text.match(/^([^→]{2,80})\s*→\s*(.+)$/);
-    if (arrow) return { front: arrow[1].trim(), back: arrow[2].trim() };
-    return { front: `${lessonTitle}: key idea ${idx + 1}`, back: text };
+
+    const equals = text.match(/^([^=→]{2,80})\s*(?:=|→)\s*(.+)$/);
+    if (equals) return makeCard(equals[1], equals[2], 'Term');
+
+    const colon = text.match(/^([^:]{3,80}):\s*(.+)$/);
+    if (colon) return makeCard(colon[1], colon[2], 'Term');
+
+    let m = text.match(/^(?:A|An|The)\s+([^.!?]{2,72}?)\s+(?:is|are|means)\s+(.+)$/i);
+    if (m) return makeCard(titleCaseTerm(m[1]), m[2], 'Definition');
+
+    m = text.match(/^([^.!?]{2,72}?)\s+(?:is|are|means)\s+(.+)$/i);
+    if (m && m[1].split(/\s+/).length <= 5) return makeCard(titleCaseTerm(m[1]), m[2], 'Definition');
+
+    m = text.match(/^([^.!?]{2,72}?)\s+tells\s+(.+)$/i);
+    if (m) return makeCard(`What does ${stripFinalPeriod(m[1]).toLowerCase()} tell you?`, m[2], 'Question');
+
+    m = text.match(/^([^.!?]{2,72}?)\s+forms?\s+from\s+(.+)$/i);
+    if (m) return makeCard(`How does ${stripFinalPeriod(m[1]).toLowerCase()} form?`, `From ${m[2]}`, 'Question');
+
+    m = text.match(/^([^.!?]{2,72}?)\s+happens?\s+(?:when|because)\s+(.+)$/i);
+    if (m) return makeCard(`What causes ${stripFinalPeriod(m[1]).toLowerCase()}?`, m[2], 'Question');
+
+    m = text.match(/^When\s+(.+?),\s*(.+)$/i);
+    if (m) return makeCard(`When ${m[1]}, what happens?`, m[2], 'Question');
+
+    m = text.match(/^If\s+(.+?),\s*(.+)$/i);
+    if (m) return makeCard(`If ${m[1]}, what happens?`, m[2], 'Question');
+
+    m = text.match(/^(.+?)\s+contains\s+(.+)$/i);
+    if (m) return makeCard(`What does ${stripFinalPeriod(m[1]).toLowerCase()} contain?`, m[2], 'Question');
+
+    m = text.match(/^(.+?)\s+are found\s+(.+)$/i);
+    if (m) return makeCard(`Where are ${stripFinalPeriod(m[1]).toLowerCase()} found?`, m[2], 'Question');
+
+    return makeCard(`What should you remember about ${lessonTitle}?`, text, 'Key idea');
+  }
+  function flashcardFromQuestion(q) {
+    if (!q || !q.question || !q.answerText) return null;
+    const answer = cleanFlashText(q.answerText);
+    const explanation = cleanFlashText(q.explanation || '');
+    const back = explanation && !explanation.toLowerCase().startsWith(answer.toLowerCase())
+      ? `${answer}\n\n${explanation}`
+      : (explanation || answer);
+    return makeCard(cleanFlashText(q.question), back, 'Practice');
   }
   function flashcardsForLesson(lesson) {
     const rawPoints = Array.isArray(lesson?.keyPoints) ? lesson.keyPoints.filter(Boolean) : [];
-    const points = rawPoints.length ? rawPoints : (lesson?.questions || []).map(q => `${q.answerText || 'Answer'} — ${q.explanation || q.question}`);
-    return points.map((p, i) => flashPromptFor(p, i, lesson.title));
+    const cards = rawPoints.map((p, i) => flashPromptFor(p, i, lesson.title)).filter(Boolean);
+    const practiceCards = (lesson?.questions || []).map(flashcardFromQuestion).filter(Boolean);
+    const seen = new Set();
+    return [...cards, ...practiceCards].filter(card => {
+      const key = `${card.front}|${card.back}`.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
   function ensureFlashState(lid, total) {
     if (flashState.lid !== lid) flashState = { lid, index: 0, flipped: false };
@@ -206,6 +286,16 @@
   }
   function flipFlashcard() {
     flashState.flipped = !flashState.flipped;
+    const card = document.querySelector('.flashcard');
+    if (card) {
+      card.classList.toggle('flipped', flashState.flipped);
+      card.setAttribute('aria-pressed', String(flashState.flipped));
+      const frontHint = card.querySelector('.flashcard-front .flashcard-hint');
+      const backHint = card.querySelector('.flashcard-back .flashcard-hint');
+      if (frontHint) frontHint.textContent = flashState.flipped ? 'Showing answer' : 'Tap to reveal';
+      if (backHint) backHint.textContent = flashState.flipped ? 'Tap to hide' : 'Answer side';
+      return;
+    }
     renderCurrentLesson();
   }
   function stepFlashcard(delta) {
@@ -225,11 +315,11 @@
     const i = flashState.index;
     const flipped = flashState.flipped;
     return `<div class="flashcard-module">
-      <div class="flashcard-head row"><div><b>Flashcards</b><p class="small">Tap the card to flip it, then move through the deck.</p></div><span class="pill">${i + 1}/${cards.length}</span></div>
+      <div class="flashcard-head row"><div><b>Flashcards</b><p class="small">Read the prompt, say the answer, then flip to check yourself.</p></div><span class="pill">${i + 1}/${cards.length}</span></div>
       <button class="flashcard ${flipped ? 'flipped' : ''}" data-action="flip-card" aria-label="Flip flashcard" aria-pressed="${flipped}">
         <span class="flashcard-inner">
-          <span class="flashcard-face flashcard-front"><span class="flashcard-label">Front</span><span class="flashcard-text">${escapeHTML(current.front)}</span><span class="flashcard-hint">Tap to reveal</span></span>
-          <span class="flashcard-face flashcard-back"><span class="flashcard-label">Back</span><span class="flashcard-text">${escapeHTML(current.back)}</span><span class="flashcard-hint">Tap to hide</span></span>
+          <span class="flashcard-face flashcard-front"><span class="flashcard-label">${escapeHTML(current.tag || 'Prompt')}</span><span class="flashcard-text">${escapeHTML(current.front)}</span><span class="flashcard-hint">Think of the answer, then tap to flip</span></span>
+          <span class="flashcard-face flashcard-back"><span class="flashcard-label">Answer</span><span class="flashcard-text">${escapeHTML(current.back)}</span><span class="flashcard-hint">Tap to go back to the prompt</span></span>
         </span>
       </button>
       <div class="flashcard-controls">
@@ -259,7 +349,7 @@
     const dailyPct = Math.min(100, Math.round(((state.daily?.xp || 0) / DAILY_GOAL) * 100));
     app.innerHTML = `${header()}
       <section class="screen">
-        <div class="hero"><div class="mascot">🧠</div><h1>Learn science in tiny wins.</h1><p>${escapeHTML(DATA.subtitle)} built from your uploaded study guide.</p></div>
+        <div class="hero"><div class="mascot">🧠</div><h1>Learn science in tiny wins.</h1><p>${escapeHTML(DATA.subtitle)}</p></div>
         <div class="section-title row"><span>Today’s goal</span><span class="small">${state.daily?.xp || 0}/${DAILY_GOAL} XP</span></div>
         <div class="card"><div class="progress-track"><div class="progress-fill" style="width:${dailyPct}%"></div></div><p class="small" style="margin:10px 0 0">Complete one lesson or mixed review to keep your streak alive.</p></div>
         <div class="section-title row"><span>Courses</span><span class="small">${totalDone}/${lessons.length} lessons</span></div>
@@ -455,8 +545,10 @@
   });
   window.addEventListener('keydown', (e) => {
     if (session || !(location.hash || '').includes('#/lesson/')) return;
-    const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
-    if (['button', 'input', 'textarea', 'select'].includes(tag)) return;
+    const active = document.activeElement;
+    const tag = (active && active.tagName || '').toLowerCase();
+    if (['input', 'textarea', 'select'].includes(tag)) return;
+    if (tag === 'button' && !(active && active.classList && active.classList.contains('flashcard'))) return;
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); playSound('flip'); flipFlashcard(); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); playSound('tap'); stepFlashcard(-1); }
     if (e.key === 'ArrowRight') { e.preventDefault(); playSound('tap'); stepFlashcard(1); }

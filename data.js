@@ -1,6 +1,6 @@
 window.APP_DATA = {
   "appName": "SciSprint",
-  "subtitle": "A bite-sized science review app",
+  "subtitle": "Quick science practice with flashcards, quizzes, XP, and streaks.",
   "sourceFile": "note(1).txt",
   "courses": [
     {

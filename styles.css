@@ -372,8 +372,10 @@ button { cursor: pointer; }
   border: 0;
   padding: 0;
   background: transparent;
-  perspective: 1200px;
+  perspective: 1600px;
   text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 .flashcard-inner {
   position: relative;
@@ -381,9 +383,17 @@ button { cursor: pointer; }
   width: 100%;
   min-height: 260px;
   transform-style: preserve-3d;
-  transition: transform .36s cubic-bezier(.2,.8,.2,1);
+  transform-origin: center center;
+  transition: transform .68s cubic-bezier(.18,.89,.32,1.24), filter .25s ease;
+  animation: cardDeal .32s cubic-bezier(.2,.8,.2,1) both;
 }
 .flashcard.flipped .flashcard-inner { transform: rotateY(180deg); }
+.flashcard:active .flashcard-inner { filter: brightness(.98) saturate(1.08); }
+@keyframes cardDeal {
+  from { opacity: 0; transform: translateY(14px) scale(.985) rotateX(4deg); }
+  to { opacity: 1; transform: translateY(0) scale(1) rotateX(0); }
+}
+.flashcard.flipped .flashcard-inner { animation: none; }
 .flashcard-face {
   position: absolute;
   inset: 0;
@@ -425,11 +435,16 @@ button { cursor: pointer; }
   color: #1d4ed8;
 }
 .flashcard-text {
-  max-width: 680px;
-  font-size: clamp(22px, 6vw, 34px);
-  line-height: 1.15;
+  max-width: 760px;
+  font-size: clamp(21px, 5.4vw, 34px);
+  line-height: 1.18;
   font-weight: 950;
   letter-spacing: -.04em;
+  white-space: pre-line;
+}
+.flashcard-back .flashcard-text {
+  font-size: clamp(18px, 4.6vw, 30px);
+  letter-spacing: -.035em;
 }
 .flashcard-hint {
   color: var(--muted);

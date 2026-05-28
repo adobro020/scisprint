@@ -1,6 +1,6 @@
 # SciSprint — Science Review Web App
 
-A responsive Duolingo/Quizlet-inspired science review app built from the attached study guide.
+A responsive Duolingo/Quizlet-inspired science review app for quick science practice.
 
 ## What changed in this version
 
@@ -17,3 +17,6 @@ A responsive Duolingo/Quizlet-inspired science review app built from the attache
 Open `index.html` in a modern browser.
 
 Progress is saved locally in the browser using `localStorage`.
+
+
+Update: Flashcards now use term/question prompts with answer backs and animate with a true in-place 3D flip.
