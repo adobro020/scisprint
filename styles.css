@@ -798,3 +798,263 @@ button { cursor: pointer; }
   .flashcard-inner { min-height: 390px; }
 }
 
+
+/* Final polish: full-screen responsive app, richer motion, no outer backdrop --- */
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  background: #ffffff !important;
+  overflow-x: hidden;
+}
+body {
+  padding: 0 !important;
+}
+#phone-shell {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 100dvh !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+}
+#app {
+  min-height: 100dvh !important;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(88, 204, 2, .11), transparent 28%),
+    radial-gradient(circle at 100% 4%, rgba(28, 176, 246, .10), transparent 34%),
+    linear-gradient(180deg, #fbfff8 0%, #ffffff 44%, #f8fbff 100%) !important;
+}
+.screen {
+  animation: screenEntrance .26s cubic-bezier(.2, .82, .2, 1) both;
+}
+@keyframes screenEntrance {
+  from { opacity: 0; transform: translateY(12px) scale(.992); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.course-card,
+.lesson-node,
+.note,
+.stat-card,
+.badge {
+  animation: cardPop .28s cubic-bezier(.18, .9, .18, 1.08) both;
+  animation-delay: calc(var(--i, 0) * 34ms);
+}
+@keyframes cardPop {
+  from { opacity: 0; transform: translateY(12px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.course-card,
+.lesson-card,
+.option,
+.big-btn,
+.mini-btn,
+.nav-btn,
+.flashcard-face,
+.card {
+  transition:
+    transform .18s cubic-bezier(.2, .82, .2, 1),
+    box-shadow .18s ease,
+    border-color .18s ease,
+    background .18s ease,
+    filter .18s ease;
+}
+.course-card:hover,
+.lesson-node:hover .lesson-card,
+.option:hover:not(:disabled),
+.big-btn:hover:not(:disabled),
+.mini-btn:hover:not(:disabled),
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, .10);
+}
+.lesson-node:hover .bubble {
+  animation: playfulBounce .46s cubic-bezier(.18,.9,.18,1.08) both;
+}
+@keyframes playfulBounce {
+  0% { transform: translateY(0) scale(1); }
+  45% { transform: translateY(-7px) scale(1.04); }
+  100% { transform: translateY(0) scale(1); }
+}
+.progress-fill {
+  position: relative;
+  overflow: hidden;
+}
+.progress-fill:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+  animation: progressShine 2.4s ease-in-out infinite;
+}
+@keyframes progressShine {
+  0%, 46% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.option.correct {
+  animation: correctGlow .48s cubic-bezier(.2,.82,.2,1) both;
+}
+@keyframes correctGlow {
+  0% { transform: scale(1); box-shadow: 0 0 0 rgba(88, 204, 2, 0); }
+  45% { transform: scale(1.018); box-shadow: 0 0 0 7px rgba(88, 204, 2, .12); }
+  100% { transform: scale(1); box-shadow: 0 0 0 rgba(88, 204, 2, 0); }
+}
+.option.wrong {
+  animation: softShake .34s ease both;
+}
+@keyframes softShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  55% { transform: translateX(5px); }
+  80% { transform: translateX(-2px); }
+}
+.feedback.good h3:before { content: "✨ "; }
+.feedback.bad h3:before { content: "💡 "; }
+.trophy {
+  filter: drop-shadow(0 14px 18px rgba(255, 200, 0, .25));
+}
+.flashcard:focus-visible .flashcard-face,
+.option:focus-visible,
+.course-card:focus-visible,
+.lesson-node:focus-visible .lesson-card,
+.big-btn:focus-visible,
+.mini-btn:focus-visible {
+  outline: 4px solid rgba(28, 176, 246, .28);
+  outline-offset: 3px;
+}
+.flashcard-face:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(circle at 18% 14%, rgba(255,255,255,.8), transparent 26%);
+  opacity: .8;
+}
+.flashcard:hover .flashcard-inner {
+  transform: translateY(-2px) rotateX(1.5deg);
+}
+.flashcard.flipped:hover .flashcard-inner {
+  transform: translateY(-2px) rotateY(180deg) rotateX(1.5deg);
+}
+.complete .stat-grid {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  #app { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  .screen { max-width: 1120px; padding: 28px clamp(28px, 5vw, 54px) 40px; }
+  .course-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .map { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .question-card { max-width: 980px; }
+  .options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1024px) {
+  #app {
+    min-height: 100dvh !important;
+    padding: 0 0 48px 232px !important;
+    background:
+      linear-gradient(90deg, rgba(255,255,255,.97) 0 232px, rgba(248,251,255,.92) 232px),
+      radial-gradient(circle at 92% 8%, rgba(28,176,246,.11), transparent 30%),
+      radial-gradient(circle at 54% 0%, rgba(88,204,2,.10), transparent 26%),
+      linear-gradient(180deg, #fbfff8, #ffffff 54%, #f7fbff) !important;
+  }
+  .topbar {
+    position: sticky;
+    top: 0;
+    min-height: 78px;
+    padding: 18px clamp(28px, 4vw, 64px) !important;
+    background: rgba(255,255,255,.86) !important;
+  }
+  .screen {
+    width: 100%;
+    max-width: 1240px !important;
+    margin: 0 auto;
+    padding: 32px clamp(28px, 4vw, 64px) 56px !important;
+  }
+  .bottom-nav {
+    position: fixed !important;
+    left: 24px !important;
+    top: 100px !important;
+    bottom: 28px !important;
+    transform: none !important;
+    width: 184px !important;
+    height: auto !important;
+    max-width: none !important;
+    display: flex !important;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px !important;
+    border-radius: 28px;
+    border: 1px solid rgba(229,231,235,.92);
+    background: rgba(255,255,255,.88) !important;
+    box-shadow: none !important;
+  }
+  .nav-btn {
+    display: grid !important;
+    grid-template-columns: 34px minmax(0, 1fr);
+    place-items: center start;
+    text-align: left;
+    min-height: 54px;
+    padding: 13px 14px !important;
+    border-radius: 18px;
+  }
+  .hero { min-height: min(270px, 33vh); }
+  .course-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .map { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .lesson-node { min-height: 112px; }
+  .flashcard-module { max-width: 940px; }
+  .quiz-top {
+    min-height: 78px;
+    padding: 18px clamp(28px, 4vw, 64px) 18px 260px !important;
+    grid-template-columns: 48px minmax(240px, 1fr) auto;
+    background: rgba(255,255,255,.86) !important;
+  }
+  .question-card { max-width: 980px; }
+  .toast {
+    left: calc(50% + 116px) !important;
+    width: min(540px, calc(100% - 320px));
+  }
+  .feedback {
+    left: calc(50% + 116px) !important;
+    width: min(760px, calc(100% - 320px)) !important;
+  }
+}
+
+@media (min-width: 1180px) {
+  .course-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .map { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1440px) {
+  #app { padding-left: 260px !important; }
+  .bottom-nav { left: 32px !important; width: 204px !important; }
+  .quiz-top { padding-left: 300px !important; }
+  .screen { max-width: 1440px !important; }
+  .course-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .map { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .flashcard-module { max-width: 1080px; }
+  .feedback { left: calc(50% + 130px) !important; }
+  .toast { left: calc(50% + 130px) !important; }
+}
+
+@media (min-width: 1740px) {
+  .screen { max-width: 1560px !important; }
+  .course-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .map { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *:before, *:after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .001ms !important;
+  }
+}

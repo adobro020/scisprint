@@ -1,34 +1,19 @@
-# SciSprint — Responsive Science Review Web App
+# SciSprint — Science Review Web App
 
-A Duolingo-style science review app built from the provided study guide.
+A responsive Duolingo/Quizlet-inspired science review app built from the attached study guide.
 
-## What's included
-- Mobile-first lesson path UI
-- Desktop dashboard layout that activates at wider screen sizes
-- Course progress, XP, hearts, streaks, mixed review, and mistake review
-- Standalone local storage progress tracking
+## What changed in this version
+
+- Lesson clicks now open the lesson page correctly.
+- Every lesson is available from the start, with no “Unlocked” label shown in the lesson path.
+- The app fills the whole browser window; there is no outer phone/background shell.
+- Layouts adapt across phone, tablet, laptop, desktop, and wide desktop sizes.
+- Study sections use real flip flashcards with next/previous controls.
+- Sounds have been upgraded with richer Web Audio effects for taps, flips, correct answers, mistakes, and completion.
+- Added more polished animations for cards, lesson nodes, answer feedback, progress bars, and screen transitions.
 
 ## How to run
-Open `index.html` in a modern browser. No server or installation is required.
 
-## Desktop behavior
-At tablet/desktop widths, the app changes from a phone shell into a wider dashboard:
-- Side navigation replaces the bottom tab bar
-- Courses and lessons use multi-column cards
-- Study cards and quiz answers expand into desktop grids
-- Feedback appears as a desktop panel instead of a mobile bottom sheet
+Open `index.html` in a modern browser.
 
-
-Update: Sound effects are built in with the Web Audio API. Use the 🔊/🔇 button in the top stats bar to mute or unmute. Sounds include tap, correct, incorrect, locked lesson, and lesson-complete effects.
-
-## Combo pitch update
-Correct-answer sounds now climb higher in pitch for each consecutive correct answer within a quiz session. A wrong answer resets the combo, and the quiz screen shows the current in-a-row count once it reaches 2.
-
-
-Update notes:
-- All lessons are unlocked from the start.
-- Combo text is simplified and no longer mentions sound pitch.
-- Responsive layout now changes at phone, tablet, laptop, and wide desktop widths.
-
-
-Update: Lesson study sections now use Quizlet-style flip flashcards with previous/next navigation and keyboard shortcuts.
+Progress is saved locally in the browser using `localStorage`.

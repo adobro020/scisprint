@@ -44,45 +44,120 @@
     return a;
   }
   let audioCtx = null;
+  let masterGain = null;
   function getAudioContext() {
     if (!state.soundOn) return null;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return null;
     try {
       audioCtx = audioCtx || new AudioContext();
+      if (!masterGain) {
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = 0.72;
+        masterGain.connect(audioCtx.destination);
+      }
       if (audioCtx.state === "suspended") audioCtx.resume();
       return audioCtx;
     } catch {
       return null;
     }
   }
-  function tone(ctx, freq, start, duration, type = "sine", volume = 0.06) {
+  function shapeTone(ctx, opts) {
+    const {
+      freq, start, duration, type = "sine", volume = 0.06,
+      attack = 0.012, release = 0.045, slideTo = null, pan = 0, detune = 0
+    } = opts;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
+    const stereo = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
     osc.type = type;
     osc.frequency.setValueAtTime(freq, start);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, start + duration * .88);
+    osc.detune.setValueAtTime(detune, start);
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(volume, start + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    osc.connect(gain).connect(ctx.destination);
+    gain.gain.exponentialRampToValueAtTime(Math.max(volume, 0.0002), start + attack);
+    gain.gain.exponentialRampToValueAtTime(Math.max(volume * .62, 0.0002), start + Math.max(attack + .015, duration * .45));
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration + release);
+    if (stereo) {
+      stereo.pan.setValueAtTime(pan, start);
+      osc.connect(gain).connect(stereo).connect(masterGain || ctx.destination);
+    } else {
+      osc.connect(gain).connect(masterGain || ctx.destination);
+    }
     osc.start(start);
-    osc.stop(start + duration + 0.02);
+    osc.stop(start + duration + release + .025);
+  }
+  function noiseBurst(ctx, start, duration = .05, volume = .03, filterFreq = 4200) {
+    const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * duration));
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    src.buffer = buffer;
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(filterFreq, start);
+    filter.Q.setValueAtTime(1.2, start);
+    gain.gain.setValueAtTime(volume, start);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    src.connect(filter).connect(gain).connect(masterGain || ctx.destination);
+    src.start(start);
+    src.stop(start + duration + .02);
   }
   function playSound(name, combo = 1) {
     const ctx = getAudioContext();
     if (!ctx) return;
-    const now = ctx.currentTime;
-    const comboSteps = name === 'correct' ? Math.min(Math.max(combo - 1, 0), 8) : 0;
+    const now = ctx.currentTime + 0.006;
+    const comboSteps = name === 'correct' ? Math.min(Math.max(combo - 1, 0), 10) : 0;
     const pitchLift = Math.pow(2, comboSteps / 12);
-    const volumeLift = name === 'correct' ? Math.min(0.015, comboSteps * 0.0025) : 0;
-    const patterns = {
-      tap: [[392, 0, .05, "triangle", .025]],
-      correct: [[523.25, 0, .09, "triangle", .06], [659.25, .08, .10, "triangle", .06], [783.99, .17, .12, "triangle", .055]],
-      wrong: [[220, 0, .12, "sawtooth", .035], [164.81, .12, .16, "sawtooth", .03]],
-      locked: [[146.83, 0, .11, "square", .025], [130.81, .12, .14, "square", .022]],
-      complete: [[523.25, 0, .10, "triangle", .06], [659.25, .10, .10, "triangle", .06], [783.99, .20, .12, "triangle", .06], [1046.5, .34, .28, "sine", .055]]
-    };
-    (patterns[name] || patterns.tap).forEach(([freq, offset, dur, type, vol]) => tone(ctx, freq * pitchLift, now + offset, dur, type, vol + volumeLift));
+    const make = (freq, offset, duration, type, volume, extra = {}) => shapeTone(ctx, {
+      freq: freq * pitchLift,
+      start: now + offset,
+      duration,
+      type,
+      volume,
+      ...extra
+    });
+    if (name === 'tap') {
+      make(520, 0, .035, 'triangle', .028, { slideTo: 700, release: .025 });
+      noiseBurst(ctx, now + .002, .018, .011, 6000);
+      return;
+    }
+    if (name === 'flip') {
+      make(330, 0, .045, 'triangle', .024, { slideTo: 510, pan: -.12, release: .025 });
+      make(660, .032, .055, 'sine', .024, { slideTo: 540, pan: .12, release: .035 });
+      noiseBurst(ctx, now + .012, .045, .014, 5200);
+      return;
+    }
+    if (name === 'correct') {
+      const vol = Math.min(.078, .055 + comboSteps * .003);
+      make(523.25, 0, .085, 'triangle', vol, { pan: -.08, release: .04 });
+      make(659.25, .072, .092, 'triangle', vol, { pan: .04, release: .04 });
+      make(783.99, .15, .13, 'sine', vol * .9, { pan: .12, release: .055 });
+      if (comboSteps >= 2) make(1046.5, .245, .105, 'sine', .032, { release: .08, detune: 4 });
+      noiseBurst(ctx, now + .21, .035, .012 + comboSteps * .001, 7600);
+      return;
+    }
+    if (name === 'wrong') {
+      shapeTone(ctx, { freq: 246.94, start: now, duration: .11, type: 'sawtooth', volume: .034, slideTo: 207.65, release: .065, pan: -.05 });
+      shapeTone(ctx, { freq: 185.0, start: now + .105, duration: .16, type: 'triangle', volume: .032, slideTo: 146.83, release: .08, pan: .05 });
+      noiseBurst(ctx, now + .06, .05, .012, 900);
+      return;
+    }
+    if (name === 'locked') {
+      shapeTone(ctx, { freq: 174.61, start: now, duration: .08, type: 'square', volume: .018, release: .04 });
+      shapeTone(ctx, { freq: 164.81, start: now + .09, duration: .1, type: 'square', volume: .016, release: .05 });
+      return;
+    }
+    if (name === 'complete') {
+      const notes = [523.25, 659.25, 783.99, 987.77, 1046.5];
+      notes.forEach((n, i) => shapeTone(ctx, { freq: n, start: now + i * .085, duration: i === notes.length - 1 ? .32 : .11, type: i < 3 ? 'triangle' : 'sine', volume: i === notes.length - 1 ? .06 : .052, release: .09, pan: (i - 2) * .08 }));
+      shapeTone(ctx, { freq: 1318.5, start: now + .46, duration: .16, type: 'sine', volume: .026, release: .12, pan: .18 });
+      noiseBurst(ctx, now + .37, .12, .022, 8400);
+      return;
+    }
+    make(440, 0, .06, 'triangle', .025);
   }
   function toggleSound() {
     state.soundOn = !state.soundOn;
@@ -117,6 +192,8 @@
     return { front: `${lessonTitle}: key idea ${idx + 1}`, back: text };
   }
   function flashcardsForLesson(lesson) {
+    const rawPoints = Array.isArray(lesson?.keyPoints) ? lesson.keyPoints.filter(Boolean) : [];
+    const points = rawPoints.length ? rawPoints : (lesson?.questions || []).map(q => `${q.answerText || 'Answer'} — ${q.explanation || q.question}`);
     return points.map((p, i) => flashPromptFor(p, i, lesson.title));
   }
   function ensureFlashState(lid, total) {
@@ -186,8 +263,8 @@
         <div class="section-title row"><span>Today’s goal</span><span class="small">${state.daily?.xp || 0}/${DAILY_GOAL} XP</span></div>
         <div class="card"><div class="progress-track"><div class="progress-fill" style="width:${dailyPct}%"></div></div><p class="small" style="margin:10px 0 0">Complete one lesson or mixed review to keep your streak alive.</p></div>
         <div class="section-title row"><span>Courses</span><span class="small">${totalDone}/${lessons.length} lessons</span></div>
-        <div class="course-grid">${DATA.courses.map(c => `
-          <button class="course-card" data-route="#/course/${c.id}">
+        <div class="course-grid">${DATA.courses.map((c, idx) => `
+          <button class="course-card" style="--i:${idx}" data-route="#/course/${c.id}">
             <span class="course-emoji">${c.emoji}</span>
             <span><h3>${escapeHTML(c.title)}</h3><p>${escapeHTML(c.tagline)}</p><div class="progress-track"><div class="progress-fill" style="width:${coursePct(c)}%"></div></div></span>
             <span class="chev">›</span>
@@ -208,9 +285,9 @@
           const done = isDone(lesson.id);
           const bubbleClass = done ? 'done' : 'active';
           const icon = done ? '✓' : course.emoji;
-          return `<button class="lesson-node" data-route="#/lesson/${course.id}/${lesson.id}">
+          return `<button class="lesson-node" style="--i:${idx}" data-route="#/lesson/${course.id}/${lesson.id}">
             <span class="bubble ${bubbleClass}">${icon}</span>
-            <span class="lesson-card"><span><h3>${lesson.order}. ${escapeHTML(lesson.title)}</h3><p>${lesson.questionCount} challenge${lesson.questionCount === 1 ? '' : 's'} · ${lesson.keyPoints.length} study cards · unlocked</p></span><span class="chev">›</span></span>
+            <span class="lesson-card"><span><h3>${lesson.order}. ${escapeHTML(lesson.title)}</h3><p>${lesson.questionCount} challenge${lesson.questionCount === 1 ? '' : 's'} · ${lesson.keyPoints.length} flashcards</p></span><span class="chev">›</span></span>
           </button>`;
         }).join("")}</div>
       </section>${bottomNav()}`;
@@ -220,7 +297,7 @@
     if (!course || !lesson) return renderHome();
     app.innerHTML = `${header('Lesson', `#/course/${cid}`)}
       <section class="screen">
-        <div class="lesson-hero"><div class="small">${course.emoji} ${escapeHTML(course.title)} · Lesson ${lesson.order}</div><h1>${escapeHTML(lesson.title)}</h1><p>${lesson.questionCount} challenge questions. Earn XP by answering them correctly.</p></div>
+        <div class="lesson-hero"><div class="small">${course.emoji} ${escapeHTML(course.title)} · Lesson ${lesson.order}</div><h1>${escapeHTML(lesson.title)}</h1><p>${lesson.questionCount} challenge questions. Study the flashcards, then test yourself.</p></div>
         <div class="section-title">Flashcard deck</div>
         ${flashcardHTML(lesson, lid)}
         <button class="big-btn" data-action="start-lesson" data-course="${cid}" data-lesson="${lid}">${isDone(lid) ? 'Practice again' : 'Start challenge'}</button>
@@ -360,12 +437,12 @@
     const locked = e.target.closest('[data-locked]');
     const action = e.target.closest('[data-action]');
     if (routeBtn) { playSound('tap'); location.hash = routeBtn.dataset.route; return; }
-    if (locked) { playSound('locked'); toast('All lessons are unlocked — pick any lesson to practice.'); return; }
+    if (locked) { playSound('locked'); toast('Pick any lesson to practice.'); return; }
     if (!action) return;
     const a = action.dataset.action;
     if (a === 'toggle-sound') { toggleSound(); return; }
+    if (a === 'flip-card') { playSound('flip'); flipFlashcard(); return; }
     if (!['answer', 'next-question'].includes(a)) playSound('tap');
-    if (a === 'flip-card') { flipFlashcard(); return; }
     if (a === 'flash-prev') { stepFlashcard(-1); return; }
     if (a === 'flash-next') { stepFlashcard(1); return; }
     if (a === 'start-lesson') buildLessonSession(action.dataset.course, action.dataset.lesson);
@@ -380,7 +457,7 @@
     if (session || !(location.hash || '').includes('#/lesson/')) return;
     const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
     if (['button', 'input', 'textarea', 'select'].includes(tag)) return;
-    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); playSound('tap'); flipFlashcard(); }
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); playSound('flip'); flipFlashcard(); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); playSound('tap'); stepFlashcard(-1); }
     if (e.key === 'ArrowRight') { e.preventDefault(); playSound('tap'); stepFlashcard(1); }
   });
