@@ -7,6 +7,7 @@
   const app = document.getElementById("app");
   let session = null;
   let state = loadState();
+  let flashState = { lid: null, index: 0, flipped: false };
 
   function todayKey(date = new Date()) { return date.toISOString().slice(0, 10); }
   function yesterdayKey() { const d = new Date(); d.setDate(d.getDate() - 1); return todayKey(d); }
@@ -95,9 +96,73 @@
   function getLesson(cid, lid) { return getCourse(cid)?.lessons.find(l => l.id === lid); }
   function completedLessonIds() { return Object.keys(state.completed || {}); }
   function isDone(lid) { return Boolean(state.completed && state.completed[lid]); }
-  function isUnlocked(course, idx) { return idx === 0 || isDone(course.lessons[idx - 1].id); }
+  function isUnlocked(course, idx) { return true; }
   function coursePct(course) { return Math.round((course.lessons.filter(l => isDone(l.id)).length / course.lessons.length) * 100); }
   function activeNav(name) { return location.hash.includes(name) ? "active" : ""; }
+  function flashPromptFor(point, idx, lessonTitle) {
+    const text = String(point || '').replace(/\s+/g, ' ').trim();
+    const dashParts = text.split(/\s+—\s+/).filter(Boolean);
+    if (dashParts.length >= 2) return { front: dashParts[0], back: dashParts.slice(1).join(' — ') };
+    const colon = text.match(/^([^:]{3,80}):\s*(.+)$/);
+    if (colon) return { front: colon[1], back: colon[2] };
+    const equals = text.match(/^([^=]{2,80})\s*=\s*(.+)$/);
+    if (equals) return { front: equals[1].trim(), back: equals[2].trim() };
+    const isDef = text.match(/^(?:A|An|The)?\s*([^.!?]{2,70}?)\s+(?:is|are|means)\s+(.+)$/i);
+    if (isDef) {
+      const term = isDef[1].trim().replace(/^a\s+|^an\s+|^the\s+/i, '');
+      return { front: `What ${/s$/i.test(term) ? 'are' : 'is'} ${term}?`, back: isDef[2].trim() };
+    }
+    const arrow = text.match(/^([^→]{2,80})\s*→\s*(.+)$/);
+    if (arrow) return { front: arrow[1].trim(), back: arrow[2].trim() };
+    return { front: `${lessonTitle}: key idea ${idx + 1}`, back: text };
+  }
+  function flashcardsForLesson(lesson) {
+    return points.map((p, i) => flashPromptFor(p, i, lesson.title));
+  }
+  function ensureFlashState(lid, total) {
+    if (flashState.lid !== lid) flashState = { lid, index: 0, flipped: false };
+    flashState.index = Math.max(0, Math.min(flashState.index || 0, Math.max(total - 1, 0)));
+  }
+  function renderCurrentLesson() {
+    const parts = (location.hash || '').replace(/^#\/?/, '').split('/');
+    if (parts[0] === 'lesson') renderLesson(parts[1], parts[2]);
+  }
+  function flipFlashcard() {
+    flashState.flipped = !flashState.flipped;
+    renderCurrentLesson();
+  }
+  function stepFlashcard(delta) {
+    const parts = (location.hash || '').replace(/^#\/?/, '').split('/');
+    if (parts[0] !== 'lesson') return;
+    const lesson = getLesson(parts[1], parts[2]);
+    if (!lesson) return;
+    const total = flashcardsForLesson(lesson).length;
+    flashState.index = Math.max(0, Math.min((flashState.index || 0) + delta, total - 1));
+    flashState.flipped = false;
+    renderCurrentLesson();
+  }
+  function flashcardHTML(lesson, lid) {
+    const cards = flashcardsForLesson(lesson);
+    ensureFlashState(lid, cards.length);
+    const current = cards[flashState.index] || { front: 'Study', back: 'Review this lesson.' };
+    const i = flashState.index;
+    const flipped = flashState.flipped;
+    return `<div class="flashcard-module">
+      <div class="flashcard-head row"><div><b>Flashcards</b><p class="small">Tap the card to flip it, then move through the deck.</p></div><span class="pill">${i + 1}/${cards.length}</span></div>
+      <button class="flashcard ${flipped ? 'flipped' : ''}" data-action="flip-card" aria-label="Flip flashcard" aria-pressed="${flipped}">
+        <span class="flashcard-inner">
+          <span class="flashcard-face flashcard-front"><span class="flashcard-label">Front</span><span class="flashcard-text">${escapeHTML(current.front)}</span><span class="flashcard-hint">Tap to reveal</span></span>
+          <span class="flashcard-face flashcard-back"><span class="flashcard-label">Back</span><span class="flashcard-text">${escapeHTML(current.back)}</span><span class="flashcard-hint">Tap to hide</span></span>
+        </span>
+      </button>
+      <div class="flashcard-controls">
+        <button class="mini-btn" data-action="flash-prev" ${i === 0 ? 'disabled' : ''}>‹ Previous</button>
+        <button class="mini-btn strong" data-action="flip-card">Flip</button>
+        <button class="mini-btn" data-action="flash-next" ${i === cards.length - 1 ? 'disabled' : ''}>Next ›</button>
+      </div>
+      <p class="small flashcard-keys">Keyboard: Space flips · ←/→ changes cards</p>
+    </div>`;
+  }
   function header(title = DATA.appName, backTarget = null) {
     return `<header class="topbar">
       <div class="brand">${backTarget ? `<button class="back" data-route="${backTarget}" aria-label="Go back">‹</button>` : `<span class="logo">⚗️</span>`}<span>${escapeHTML(title)}</span></div>
@@ -105,11 +170,9 @@
     </header>`;
   }
   function bottomNav() {
-    const isHome = activeNav('/home') || (!location.hash || location.hash === '#');
-    const isMap = activeNav('/map') || activeNav('/course') || activeNav('/lesson');
     return `<nav class="bottom-nav">
-      <button class="nav-btn ${isHome ? 'active' : ''}" data-route="#/home"><span class="ico">🏠</span>Home</button>
-      <button class="nav-btn ${isMap ? 'active' : ''}" data-route="#/map"><span class="ico">🗺️</span>Map</button>
+      <button class="nav-btn ${activeNav('/home') || (!location.hash || location.hash === '#') ? 'active' : ''}" data-route="#/home"><span class="ico">🏠</span>Home</button>
+      <button class="nav-btn ${activeNav('/course') ? 'active' : ''}" data-route="#/home"><span class="ico">🗺️</span>Map</button>
       <button class="nav-btn ${activeNav('/profile') || activeNav('/review') ? 'active' : ''}" data-route="#/profile"><span class="ico">👤</span>Profile</button>
     </nav>`;
   }
@@ -133,45 +196,6 @@
         <button class="big-btn secondary" data-action="mixed">⚡ Mixed 8-question review</button>
       </section>${bottomNav()}`;
   }
-  function renderMap() {
-    const lessons = allLessons();
-    const doneCount = completedLessonIds().length;
-    const overallPct = lessons.length ? Math.round((doneCount / lessons.length) * 100) : 0;
-    const nextItem = lessons.find(({ course, lesson }) => {
-      const idx = course.lessons.findIndex(l => l.id === lesson.id);
-      return !isDone(lesson.id) && isUnlocked(course, idx);
-    });
-    app.innerHTML = `${header('🗺️ Science Map', '#/home')}
-      <section class="screen map-screen">
-        <div class="lesson-hero global-map-hero">
-          <div class="small">${doneCount}/${lessons.length} lessons complete</div>
-          <h1>Everything in one map</h1>
-          <p>Follow the full science path across Nature of Science, Earth Science, Physics, and Chemistry.</p>
-          <div class="progress-track" style="margin-top:14px"><div class="progress-fill" style="width:${overallPct}%"></div></div>
-        </div>
-        ${nextItem ? `<button class="big-btn map-continue" data-route="#/lesson/${nextItem.course.id}/${nextItem.lesson.id}">Continue: ${escapeHTML(nextItem.lesson.title)}</button>` : `<button class="big-btn secondary map-continue" data-action="mixed">All lessons complete — mixed review</button>`}
-        <div class="mega-map">${DATA.courses.map(course => {
-          const courseDone = course.lessons.filter(l => isDone(l.id)).length;
-          return `<section class="map-course">
-            <div class="map-course-head">
-              <span class="course-emoji map-course-icon">${course.emoji}</span>
-              <span><h2>${escapeHTML(course.title)}</h2><p>${courseDone}/${course.lessons.length} complete · ${escapeHTML(course.tagline)}</p></span>
-            </div>
-            <div class="progress-track"><div class="progress-fill" style="width:${coursePct(course)}%"></div></div>
-            <div class="map all-lessons-map">${course.lessons.map((lesson, idx) => {
-              const done = isDone(lesson.id); const unlocked = isUnlocked(course, idx);
-              const bubbleClass = done ? 'done' : unlocked ? 'active' : 'locked';
-              const icon = done ? '✓' : unlocked ? course.emoji : '🔒';
-              return `<button class="lesson-node" data-${unlocked ? 'route' : 'locked'}="${unlocked ? `#/lesson/${course.id}/${lesson.id}` : 'true'}">
-                <span class="bubble ${bubbleClass}">${icon}</span>
-                <span class="lesson-card ${unlocked ? '' : 'locked'}"><span><h3>${lesson.order}. ${escapeHTML(lesson.title)}</h3><p>${escapeHTML(course.title)} · ${lesson.questionCount} challenge${lesson.questionCount === 1 ? '' : 's'} · ${lesson.keyPoints.length} study cards</p></span><span class="chev">${unlocked ? '›' : ''}</span></span>
-              </button>`;
-            }).join("")}</div>
-          </section>`;
-        }).join("")}</div>
-      </section>${bottomNav()}`;
-  }
-
   function renderCourse(cid) {
     const course = getCourse(cid);
     if (!course) return renderHome();
@@ -181,12 +205,12 @@
         <div class="lesson-hero"><div class="small">${done}/${course.lessons.length} lessons complete</div><h1>${escapeHTML(course.title)}</h1><p>${escapeHTML(course.tagline)}</p><div class="progress-track" style="margin-top:14px"><div class="progress-fill" style="width:${coursePct(course)}%"></div></div></div>
         <div class="section-title">Lesson path</div>
         <div class="map">${course.lessons.map((lesson, idx) => {
-          const done = isDone(lesson.id); const unlocked = isUnlocked(course, idx);
-          const bubbleClass = done ? 'done' : unlocked ? 'active' : 'locked';
-          const icon = done ? '✓' : unlocked ? course.emoji : '🔒';
-          return `<button class="lesson-node" data-${unlocked ? 'route' : 'locked'}="${unlocked ? `#/lesson/${course.id}/${lesson.id}` : 'true'}">
+          const done = isDone(lesson.id);
+          const bubbleClass = done ? 'done' : 'active';
+          const icon = done ? '✓' : course.emoji;
+          return `<button class="lesson-node" data-route="#/lesson/${course.id}/${lesson.id}">
             <span class="bubble ${bubbleClass}">${icon}</span>
-            <span class="lesson-card ${unlocked ? '' : 'locked'}"><span><h3>${lesson.order}. ${escapeHTML(lesson.title)}</h3><p>${lesson.questionCount} challenge${lesson.questionCount === 1 ? '' : 's'} · ${lesson.keyPoints.length} study cards</p></span><span class="chev">${unlocked ? '›' : ''}</span></span>
+            <span class="lesson-card"><span><h3>${lesson.order}. ${escapeHTML(lesson.title)}</h3><p>${lesson.questionCount} challenge${lesson.questionCount === 1 ? '' : 's'} · ${lesson.keyPoints.length} study cards · unlocked</p></span><span class="chev">›</span></span>
           </button>`;
         }).join("")}</div>
       </section>${bottomNav()}`;
@@ -194,12 +218,11 @@
   function renderLesson(cid, lid) {
     const course = getCourse(cid); const lesson = getLesson(cid, lid);
     if (!course || !lesson) return renderHome();
-    const points = lesson.keyPoints.length ? lesson.keyPoints : ['Review this lesson, then answer the challenge questions.'];
     app.innerHTML = `${header('Lesson', `#/course/${cid}`)}
       <section class="screen">
         <div class="lesson-hero"><div class="small">${course.emoji} ${escapeHTML(course.title)} · Lesson ${lesson.order}</div><h1>${escapeHTML(lesson.title)}</h1><p>${lesson.questionCount} challenge questions. Earn XP by answering them correctly.</p></div>
-        <div class="section-title">Bite-sized study cards</div>
-        <div class="notes">${points.map((p, i) => `<div class="note"><span class="note-num">${i + 1}</span><span>${escapeHTML(p)}</span></div>`).join("")}</div>
+        <div class="section-title">Flashcard deck</div>
+        ${flashcardHTML(lesson, lid)}
         <button class="big-btn" data-action="start-lesson" data-course="${cid}" data-lesson="${lid}">${isDone(lid) ? 'Practice again' : 'Start challenge'}</button>
       </section>${bottomNav()}`;
   }
@@ -226,7 +249,7 @@
     if (session.index >= session.questions.length) return renderComplete();
     const q = session.questions[session.index];
     const pct = Math.round((session.index / session.questions.length) * 100);
-    app.innerHTML = `<div class="quiz-top"><button class="close" data-action="quit-quiz">×</button><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><div class="quiz-controls"><span class="pill">❤️ ${state.hearts ?? MAX_HEARTS}</span>${(session.combo || 0) > 1 ? `<span class="pill">🎵 ${session.combo} in a row</span>` : ''}<button class="pill sound-toggle" data-action="toggle-sound" aria-label="${state.soundOn ? 'Mute sounds' : 'Unmute sounds'}">${state.soundOn ? '🔊' : '🔇'}</button></div></div>
+    app.innerHTML = `<div class="quiz-top"><button class="close" data-action="quit-quiz">×</button><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><div class="quiz-controls"><span class="pill">❤️ ${state.hearts ?? MAX_HEARTS}</span>${(session.combo || 0) > 1 ? `<span class="pill combo-pill">${session.combo} in a row</span>` : ''}<button class="pill sound-toggle" data-action="toggle-sound" aria-label="${state.soundOn ? 'Mute sounds' : 'Unmute sounds'}">${state.soundOn ? '🔊' : '🔇'}</button></div></div>
       <section class="screen">
         <div class="question-card">
           <div class="question-kicker">${session.mode === 'lesson' ? 'Lesson challenge' : session.title} · ${session.index + 1}/${session.questions.length}</div>
@@ -244,7 +267,7 @@
     const q = session.questions[session.index];
     const good = session.selected === q.answer;
     const explanation = q.explanation || `Correct answer: ${q.answer}. ${q.answerText || ''}`;
-    const comboNote = good && (session.combo || 0) > 1 ? `<p class="small">${session.combo} correct in a row — the next correct sound will climb higher.</p>` : '';
+    const comboNote = good && (session.combo || 0) > 1 ? `<p class="small">${session.combo} in a row — keep going!</p>` : '';
     return `<div class="feedback ${good ? 'good' : 'bad'}"><h3>${good ? 'Nice!' : 'Not quite'}</h3><p>${escapeHTML(explanation)}</p>${comboNote}<button class="big-btn ${good ? '' : 'danger'}" data-action="next-question">Continue</button></div>`;
   }
   function answer(letter) {
@@ -307,7 +330,6 @@
   function route() {
     const hash = location.hash || '#/home';
     const parts = hash.replace(/^#\/?/, '').split('/');
-    if (parts[0] === 'map') return renderMap();
     if (parts[0] === 'course') return renderCourse(parts[1]);
     if (parts[0] === 'lesson') return renderLesson(parts[1], parts[2]);
     if (parts[0] === 'profile') return renderProfile();
@@ -338,11 +360,14 @@
     const locked = e.target.closest('[data-locked]');
     const action = e.target.closest('[data-action]');
     if (routeBtn) { playSound('tap'); location.hash = routeBtn.dataset.route; return; }
-    if (locked) { playSound('locked'); toast('Finish the previous lesson to unlock this one.'); return; }
+    if (locked) { playSound('locked'); toast('All lessons are unlocked — pick any lesson to practice.'); return; }
     if (!action) return;
     const a = action.dataset.action;
     if (a === 'toggle-sound') { toggleSound(); return; }
     if (!['answer', 'next-question'].includes(a)) playSound('tap');
+    if (a === 'flip-card') { flipFlashcard(); return; }
+    if (a === 'flash-prev') { stepFlashcard(-1); return; }
+    if (a === 'flash-next') { stepFlashcard(1); return; }
     if (a === 'start-lesson') buildLessonSession(action.dataset.course, action.dataset.lesson);
     if (a === 'answer') answer(action.dataset.letter);
     if (a === 'next-question') nextQuestion();
@@ -350,6 +375,14 @@
     if (a === 'mixed') buildMixedSession();
     if (a === 'review') buildReviewSession();
     if (a === 'reset') { if (confirm('Reset all progress and XP?')) { state = defaultState(); saveState(); route(); } }
+  });
+  window.addEventListener('keydown', (e) => {
+    if (session || !(location.hash || '').includes('#/lesson/')) return;
+    const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+    if (['button', 'input', 'textarea', 'select'].includes(tag)) return;
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); playSound('tap'); flipFlashcard(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); playSound('tap'); stepFlashcard(-1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); playSound('tap'); stepFlashcard(1); }
   });
   window.addEventListener('hashchange', () => { session = null; route(); });
   route();
